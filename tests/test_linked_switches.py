@@ -310,7 +310,7 @@ def sort_prefixes(serv) -> int:
 async def test_names_carry_the_listed_order(
     hass, hk_driver, night, timer, accessory_class, primary
 ):
-    """The Home app sorts by name, so earlier services get more leading prefixes."""
+    """The Home app sorts by name, so later services get more leading prefixes."""
     set_climate(hass, [timer, night])
     acc = await start(hass, hk_driver, accessory_class)
 
@@ -321,10 +321,10 @@ async def test_names_carry_the_listed_order(
         sort_prefixes(fan),
         sort_prefixes(switches["Bedroom AC 30 Minutes Timer"]),
         sort_prefixes(switches["Night mode"]),
-    ] == [3, 2, 1]
-    # Sorted by code point, the names come out in the listed order.
+    ] == [1, 2, 3]
+    # Sorted the way the Home app does, the names come out in the listed order.
     names = [s.get_characteristic(CHAR_CONFIGURED_NAME).value for s in (fan, *switches.values())]
-    assert [n.lstrip(ZWSP) for n in sorted(names, key=lambda n: (-sort_prefixes_of(n), n))] == [
+    assert [n.lstrip(ZWSP) for n in sorted(names, key=lambda n: (sort_prefixes_of(n), n))] == [
         "Fan",
         "Bedroom AC 30 Minutes Timer",
         "Night mode",

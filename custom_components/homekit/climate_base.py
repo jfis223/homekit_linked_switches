@@ -365,9 +365,11 @@ class HomeKitClimateAccessory(HomeAccessory):
     def _sorted_name(self, name: str, position: int) -> str:
         """Lead a name with zero-width spaces so it sorts at `position`.
 
-        Position -1 is the fan, ahead of the first switch at 0.
+        The Home app sorts names with more prefixes later. Position -1 is
+        the fan, ahead of the first switch at 0, and keeps one prefix so
+        every name is compared the same way.
         """
-        prefix = SORT_PREFIX_CHAR * (len(self.linked_switches) - position)
+        prefix = SORT_PREFIX_CHAR * (position + 2)
         return prefix + cleanup_name_for_homekit(name)[: MAX_NAME_LENGTH - len(prefix)]
 
     def _linked_switch_name(self, entity_id: str) -> str:

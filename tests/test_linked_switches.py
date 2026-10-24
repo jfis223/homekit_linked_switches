@@ -1,7 +1,7 @@
 """Tests for linked switches on the climate accessories.
 
 A climate entity lists entities in its `homekit_linked_switches` attribute and
-each becomes a switch service linked into its accessory, so the Home app shows
+each becomes a switch service in its accessory, so the Home app shows
 them inside the same tile. Both climate accessory types share the code, so
 every test runs against both.
 """
@@ -133,7 +133,7 @@ def timer(hass):
 
 
 @pytest.mark.parametrize(("accessory_class", "primary"), ACCESSORIES)
-async def test_one_linked_switch_per_entity(
+async def test_one_switch_per_entity_in_the_same_accessory(
     hass, hk_driver, night, timer, accessory_class, primary
 ):
     set_climate(hass, [night, timer])
@@ -143,7 +143,8 @@ async def test_one_linked_switch_per_entity(
     # Registry names drop the device prefix; a helper has only its friendly name.
     assert set(switches) == {"Night mode", "Bedroom AC 30 Minutes Timer"}
     primary_serv = acc.get_service(primary)
-    assert all(serv in primary_serv.linked_services for serv in switches.values())
+    # Not linked: the Home app draws linked services as uncaptioned controls.
+    assert not any(serv in primary_serv.linked_services for serv in switches.values())
     # The tile must still open on the climate service, not a switch.
     assert primary_serv.is_primary_service
     assert not any(serv.is_primary_service for serv in switches.values())

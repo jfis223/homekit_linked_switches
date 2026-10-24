@@ -90,7 +90,7 @@ from .util import (
 _LOGGER = logging.getLogger(__name__)
 
 # [linked-switches patch] Entities listed in this state attribute become switch
-# services linked into the climate accessory, so they share its tile.
+# services in the climate accessory, so they share its tile.
 ATTR_HOMEKIT_LINKED_SWITCHES = "homekit_linked_switches"
 
 FAN_STATE_INACTIVE = 0
@@ -327,17 +327,20 @@ class HomeKitClimateAccessory(HomeAccessory):
             self.char_swing.set_value(1 if is_swing_on(swing_mode) else 0)
 
     def _configure_linked_switches(self, primary_serv: Service) -> None:
-        """[linked-switches patch] Add a linked switch per listed entity.
+        """[linked-switches patch] Add a switch per listed entity.
 
+        The switches join the accessory but are deliberately not linked to
+        `primary_serv`: the Home app draws linked services as inline controls
+        of the primary one with no caption, so linked switches show unlabelled.
         Subclasses call this before set_primary_service, so the primary flag
-        is set explicitly on every service.
+        is set explicitly on every service and the tile still opens on the
+        climate service.
         """
         for entity_id in self.linked_switches:
             name = self._linked_switch_name(entity_id)
             serv = self.add_preload_service(
                 SERV_SWITCH, [CHAR_NAME, CHAR_CONFIGURED_NAME], unique_id=entity_id
             )
-            primary_serv.add_linked_service(serv)
             serv.configure_char(
                 CHAR_NAME, value=cleanup_name_for_homekit(f"{self.display_name} {name}")
             )

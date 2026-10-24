@@ -2,7 +2,7 @@
 
 A patched copy of Home Assistant's built-in `homekit` integration (HomeKit Bridge), installed as a custom component so it replaces the built-in one. It adds one thing: switches inside a climate accessory's tile.
 
-HomeKit lets an accessory carry extra Switch services, which is how some air conditioners with native HomeKit show mode switches inside their tile. Stock Home Assistant does this only for fans, with one switch per preset mode. Its climate accessories (Thermostat and HeaterCooler) never get any. With this override, a climate entity whose state carries a `homekit_linked_switches` attribute gets one switch per listed entity, linked into its tile:
+HomeKit lets an accessory carry extra Switch services, which is how some air conditioners with native HomeKit show mode switches inside their tile. Stock Home Assistant does this only for fans, with one switch per preset mode. Its climate accessories (Thermostat and HeaterCooler) never get any. With this override, a climate entity whose state carries a `homekit_linked_switches` attribute gets one switch per listed entity inside its tile:
 
 ```yaml
 homekit_linked_switches:

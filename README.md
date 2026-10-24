@@ -22,7 +22,7 @@ The HomeKit Device Aggregator (`homekit_device`) `air_conditioner` type sets thi
 
 ## Install
 
-1. Copy `custom_components/homekit` to `/config/custom_components/homekit` (`make deploy HA_CONFIG=/path/to/config`).
+1. In HACS, add `https://github.com/jfis223/homekit_linked_switches` as a custom repository of type Integration and download it. Or copy `custom_components/homekit` to `/config/custom_components/homekit` yourself (`make deploy HA_CONFIG=/path/to/config`).
 2. Restart Home Assistant. The log warns that a custom integration overrides `homekit`; that is expected. Existing bridges and pairings carry over, because the config entries and storage are unchanged.
 
 To uninstall, delete `/config/custom_components/homekit` and restart. The built-in integration takes over again and the linked switches disappear.

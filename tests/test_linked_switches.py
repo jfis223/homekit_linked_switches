@@ -37,11 +37,8 @@ from custom_components.homekit.const import (
     CHAR_CONFIGURED_NAME,
     CHAR_NAME,
     CHAR_ON,
-    CHAR_SERVICE_LABEL_INDEX,
-    CHAR_SERVICE_LABEL_NAMESPACE,
     SERV_FANV2,
     SERV_HEATER_COOLER,
-    SERV_SERVICE_LABEL,
     SERV_SWITCH,
     SERV_THERMOSTAT,
 )
@@ -98,10 +95,13 @@ async def start(hass, hk_driver, accessory_class):
     return acc
 
 
+ZWSP = "\u200b"
+
+
 def switch_services(acc) -> dict[str, object]:
-    """The linked switch services, keyed by their configured name."""
+    """The linked switch services, keyed by their name without sort prefixes."""
     return {
-        serv.get_characteristic(CHAR_CONFIGURED_NAME).value: serv
+        serv.get_characteristic(CHAR_CONFIGURED_NAME).value.lstrip(ZWSP): serv
         for serv in acc.services
         if serv.display_name == SERV_SWITCH
     }
@@ -151,7 +151,9 @@ async def test_one_switch_per_entity_in_the_same_accessory(
     # The Home app captions switches whose Name matches ConfiguredName; an
     # accessory-name prefix on Name is what upstream's unlabelled presets do.
     assert all(
-        serv.get_characteristic(CHAR_NAME).value == label for label, serv in switches.items()
+        serv.get_characteristic(CHAR_NAME).value
+        == serv.get_characteristic(CHAR_CONFIGURED_NAME).value
+        for serv in switches.values()
     )
     # Not linked: the Home app draws linked services as uncaptioned controls.
     assert not any(serv in primary_serv.linked_services for serv in switches.values())
@@ -296,35 +298,48 @@ async def test_run_stays_a_loop_callback(hass, hk_driver, accessory_class, prima
 # Order
 
 
+def sort_prefixes_of(name: str) -> int:
+    return len(name) - len(name.lstrip(ZWSP))
+
+
+def sort_prefixes(serv) -> int:
+    return sort_prefixes_of(serv.get_characteristic(CHAR_CONFIGURED_NAME).value)
+
+
 @pytest.mark.parametrize(("accessory_class", "primary"), ACCESSORIES)
-async def test_services_are_numbered_in_the_listed_order(
+async def test_names_carry_the_listed_order(
     hass, hk_driver, night, timer, accessory_class, primary
 ):
-    """The Home app sorts by name unless the services carry an order."""
+    """The Home app sorts by name, so earlier services get more leading prefixes."""
     set_climate(hass, [timer, night])
     acc = await start(hass, hk_driver, accessory_class)
 
     switches = switch_services(acc)
-    indexes = {
-        label: serv.get_characteristic(CHAR_SERVICE_LABEL_INDEX).value
-        for label, serv in switches.items()
-    }
-    # The fan heads the order, so the switches start at 2.
-    assert indexes == {"Bedroom AC 30 Minutes Timer": 2, "Night mode": 3}
-    assert acc.get_service(SERV_FANV2).get_characteristic(CHAR_SERVICE_LABEL_INDEX).value == 1
-    label = acc.get_service(SERV_SERVICE_LABEL)
-    assert label.get_characteristic(CHAR_SERVICE_LABEL_NAMESPACE).value == 1
+    fan = acc.get_service(SERV_FANV2)
+    assert fan.get_characteristic(CHAR_CONFIGURED_NAME).value.lstrip(ZWSP) == "Fan"
+    assert [
+        sort_prefixes(fan),
+        sort_prefixes(switches["Bedroom AC 30 Minutes Timer"]),
+        sort_prefixes(switches["Night mode"]),
+    ] == [3, 2, 1]
+    # Sorted by code point, the names come out in the listed order.
+    names = [s.get_characteristic(CHAR_CONFIGURED_NAME).value for s in (fan, *switches.values())]
+    assert [n.lstrip(ZWSP) for n in sorted(names, key=lambda n: (-sort_prefixes_of(n), n))] == [
+        "Fan",
+        "Bedroom AC 30 Minutes Timer",
+        "Night mode",
+    ]
 
 
 @pytest.mark.parametrize(("accessory_class", "primary"), ACCESSORIES)
-async def test_no_numbering_without_switches(hass, hk_driver, accessory_class, primary):
+async def test_no_prefixes_or_fan_name_without_switches(
+    hass, hk_driver, accessory_class, primary
+):
     """A stock climate keeps upstream's services exactly."""
     set_climate(hass)
     acc = await start(hass, hk_driver, accessory_class)
 
-    assert acc.get_service(SERV_SERVICE_LABEL) is None
-    assert not any(
-        char.display_name == CHAR_SERVICE_LABEL_INDEX
-        for serv in acc.services
-        for char in serv.characteristics
+    fan = acc.get_service(SERV_FANV2)
+    assert fan is None or all(
+        char.display_name != CHAR_CONFIGURED_NAME for char in fan.characteristics
     )

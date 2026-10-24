@@ -73,15 +73,13 @@ from .const import (
     CHAR_NAME,
     CHAR_ON,
     CHAR_ROTATION_SPEED,
-    CHAR_SERVICE_LABEL_INDEX,
-    CHAR_SERVICE_LABEL_NAMESPACE,
     CHAR_SWING_MODE,
     CHAR_TARGET_FAN_STATE,
+    MAX_NAME_LENGTH,
     PROP_MAX_VALUE,
     PROP_MIN_STEP,
     PROP_MIN_VALUE,
     SERV_FANV2,
-    SERV_SERVICE_LABEL,
     SERV_SWITCH,
 )
 from .util import (
@@ -92,8 +90,10 @@ from .util import (
 
 _LOGGER = logging.getLogger(__name__)
 
-# [linked-switches patch] ServiceLabelNamespace value for 1, 2, 3 numbering.
-SERVICE_LABEL_ARABIC_NUMERALS = 1
+# [linked-switches patch] The Home app sorts a tile's services by name and
+# ignores ServiceLabelIndex there, so the listed order is carried in the names:
+# the earlier a service comes, the more zero-width spaces lead its name.
+SORT_PREFIX_CHAR = "\u200b"
 
 # [linked-switches patch] Entities listed in this state attribute become switch
 # services in the climate accessory, so they share its tile.
@@ -344,26 +344,16 @@ class HomeKitClimateAccessory(HomeAccessory):
         """
         if not self.linked_switches:
             return
-        # Number the services in the listed order so the Home app shows them
-        # that way rather than alphabetically. The fan, when there is one,
-        # is 1 (set in _configure_fan_service) and the switches follow.
-        self.add_preload_service(SERV_SERVICE_LABEL, unique_id="linked_switches").configure_char(
-            CHAR_SERVICE_LABEL_NAMESPACE, value=SERVICE_LABEL_ARABIC_NUMERALS
-        )
-        first_index = 2 if self.fan_chars else 1
-        for index, entity_id in enumerate(self.linked_switches, start=first_index):
-            name = self._linked_switch_name(entity_id)
+        # The fan, when there is one, sorts first (see _configure_fan_service).
+        for position, entity_id in enumerate(self.linked_switches):
             serv = self.add_preload_service(
-                SERV_SWITCH,
-                [CHAR_NAME, CHAR_CONFIGURED_NAME, CHAR_SERVICE_LABEL_INDEX],
-                unique_id=entity_id,
+                SERV_SWITCH, [CHAR_NAME, CHAR_CONFIGURED_NAME], unique_id=entity_id
             )
-            serv.configure_char(CHAR_SERVICE_LABEL_INDEX, value=index)
             # Name matches ConfiguredName on purpose. Upstream's fan presets
             # prefix Name with the accessory name and show unlabelled in the
             # Home app; accessories that show captions send the same text in
             # both.
-            name = cleanup_name_for_homekit(name)
+            name = self._sorted_name(self._linked_switch_name(entity_id), position)
             serv.configure_char(CHAR_NAME, value=name)
             serv.configure_char(CHAR_CONFIGURED_NAME, value=name)
             self._linked_switch_chars[entity_id] = serv.configure_char(
@@ -371,6 +361,14 @@ class HomeKitClimateAccessory(HomeAccessory):
                 value=False,
                 setter_callback=partial(self._set_linked_switch, entity_id),
             )
+
+    def _sorted_name(self, name: str, position: int) -> str:
+        """Lead a name with zero-width spaces so it sorts at `position`.
+
+        Position -1 is the fan, ahead of the first switch at 0.
+        """
+        prefix = SORT_PREFIX_CHAR * (len(self.linked_switches) - position)
+        return prefix + cleanup_name_for_homekit(name)[: MAX_NAME_LENGTH - len(prefix)]
 
     def _linked_switch_name(self, entity_id: str) -> str:
         """Name a linked switch without its device's name in front.
@@ -438,12 +436,15 @@ class HomeKitClimateAccessory(HomeAccessory):
 
     def _configure_fan_service(self, primary_serv: Service) -> None:
         """Create a linked fan service for the chars in ``fan_chars``."""
-        # [linked-switches patch] The fan heads the numbered order when there
-        # are switches to place after it.
-        chars = self.fan_chars + ([CHAR_SERVICE_LABEL_INDEX] if self.linked_switches else [])
+        # [linked-switches patch] With switches to order, the fan gets a name
+        # that sorts ahead of them all.
+        named = bool(self.linked_switches)
+        chars = self.fan_chars + ([CHAR_NAME, CHAR_CONFIGURED_NAME] if named else [])
         serv_fan = self.add_preload_service(SERV_FANV2, chars)
-        if self.linked_switches:
-            serv_fan.configure_char(CHAR_SERVICE_LABEL_INDEX, value=1)
+        if named:
+            fan_name = self._sorted_name("Fan", -1)
+            serv_fan.configure_char(CHAR_NAME, value=fan_name)
+            serv_fan.configure_char(CHAR_CONFIGURED_NAME, value=fan_name)
         primary_serv.add_linked_service(serv_fan)
         self.char_fan_active = serv_fan.configure_char(
             CHAR_ACTIVE, value=1, setter_callback=self._set_fan_active

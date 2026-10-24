@@ -1,6 +1,6 @@
 # Pins the test harness to the Home Assistant release the override was copied
 # from. Bump it together with a re-sync (`make sync HA_VERSION=...`).
-pytest-homeassistant-custom-component==0.13.373
+pytest-homeassistant-custom-component==0.13.374
 # The homekit integration's own requirements, from its manifest.json.
 HAP-python==5.0.0
 fnv-hash-fast==2.0.3

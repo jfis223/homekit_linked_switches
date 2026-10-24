@@ -18,6 +18,7 @@ The HomeKit Device Aggregator (`homekit_device`) `air_conditioner` type sets thi
 - Toggling a switch calls `homeassistant.turn_on` / `turn_off`, so `switch` and `input_boolean` entities both work. If the call fails, the switch snaps back to the entity's real state.
 - The switch follows its entity's state. While the entity is unavailable, the switch keeps its last value.
 - Changing the attribute's list rebuilds the accessory, like a changed set of HVAC or fan modes does upstream.
+- The services are numbered in the attribute's order with HomeKit's `ServiceLabelIndex` (the fan first, then the switches), so the Home app can show them in that order rather than alphabetically.
 - Linked entities are read straight from Home Assistant. Exclude them from the bridge so they don't also show as their own tiles.
 
 ## Install

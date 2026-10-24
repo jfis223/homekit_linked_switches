@@ -73,12 +73,15 @@ from .const import (
     CHAR_NAME,
     CHAR_ON,
     CHAR_ROTATION_SPEED,
+    CHAR_SERVICE_LABEL_INDEX,
+    CHAR_SERVICE_LABEL_NAMESPACE,
     CHAR_SWING_MODE,
     CHAR_TARGET_FAN_STATE,
     PROP_MAX_VALUE,
     PROP_MIN_STEP,
     PROP_MIN_VALUE,
     SERV_FANV2,
+    SERV_SERVICE_LABEL,
     SERV_SWITCH,
 )
 from .util import (
@@ -88,6 +91,9 @@ from .util import (
 )
 
 _LOGGER = logging.getLogger(__name__)
+
+# [linked-switches patch] ServiceLabelNamespace value for 1, 2, 3 numbering.
+SERVICE_LABEL_ARABIC_NUMERALS = 1
 
 # [linked-switches patch] Entities listed in this state attribute become switch
 # services in the climate accessory, so they share its tile.
@@ -336,11 +342,23 @@ class HomeKitClimateAccessory(HomeAccessory):
         is set explicitly on every service and the tile still opens on the
         climate service.
         """
-        for entity_id in self.linked_switches:
+        if not self.linked_switches:
+            return
+        # Number the services in the listed order so the Home app shows them
+        # that way rather than alphabetically. The fan, when there is one,
+        # is 1 (set in _configure_fan_service) and the switches follow.
+        self.add_preload_service(SERV_SERVICE_LABEL, unique_id="linked_switches").configure_char(
+            CHAR_SERVICE_LABEL_NAMESPACE, value=SERVICE_LABEL_ARABIC_NUMERALS
+        )
+        first_index = 2 if self.fan_chars else 1
+        for index, entity_id in enumerate(self.linked_switches, start=first_index):
             name = self._linked_switch_name(entity_id)
             serv = self.add_preload_service(
-                SERV_SWITCH, [CHAR_NAME, CHAR_CONFIGURED_NAME], unique_id=entity_id
+                SERV_SWITCH,
+                [CHAR_NAME, CHAR_CONFIGURED_NAME, CHAR_SERVICE_LABEL_INDEX],
+                unique_id=entity_id,
             )
+            serv.configure_char(CHAR_SERVICE_LABEL_INDEX, value=index)
             # Name matches ConfiguredName on purpose. Upstream's fan presets
             # prefix Name with the accessory name and show unlabelled in the
             # Home app; accessories that show captions send the same text in
@@ -420,7 +438,12 @@ class HomeKitClimateAccessory(HomeAccessory):
 
     def _configure_fan_service(self, primary_serv: Service) -> None:
         """Create a linked fan service for the chars in ``fan_chars``."""
-        serv_fan = self.add_preload_service(SERV_FANV2, self.fan_chars)
+        # [linked-switches patch] The fan heads the numbered order when there
+        # are switches to place after it.
+        chars = self.fan_chars + ([CHAR_SERVICE_LABEL_INDEX] if self.linked_switches else [])
+        serv_fan = self.add_preload_service(SERV_FANV2, chars)
+        if self.linked_switches:
+            serv_fan.configure_char(CHAR_SERVICE_LABEL_INDEX, value=1)
         primary_serv.add_linked_service(serv_fan)
         self.char_fan_active = serv_fan.configure_char(
             CHAR_ACTIVE, value=1, setter_callback=self._set_fan_active

@@ -1,6 +1,6 @@
 diff -ru --exclude __pycache__ homekit/climate_base.py /Users/tardis/code/jfis223/homekit_linked_switches/custom_components/homekit/climate_base.py
---- homekit/climate_base.py	2026-10-24 11:36:54
-+++ homekit/climate_base.py	2026-10-24 11:36:42
+--- homekit/climate_base.py	2026-10-24 11:58:41
++++ homekit/climate_base.py	2026-10-24 11:57:35
 @@ -1,12 +1,14 @@
  """Base class shared by the climate accessory types."""
  
@@ -42,7 +42,7 @@ diff -ru --exclude __pycache__ homekit/climate_base.py /Users/tardis/code/jfis22
  from homeassistant.util.percentage import percentage_to_ordered_list_item
  
  from .accessories import HomeAccessory
-@@ -52,8 +67,11 @@
+@@ -52,20 +67,38 @@
  )
  from .const import (
      CHAR_ACTIVE,
@@ -52,12 +52,15 @@ diff -ru --exclude __pycache__ homekit/climate_base.py /Users/tardis/code/jfis22
 +    CHAR_NAME,
 +    CHAR_ON,
      CHAR_ROTATION_SPEED,
++    CHAR_SERVICE_LABEL_INDEX,
++    CHAR_SERVICE_LABEL_NAMESPACE,
      CHAR_SWING_MODE,
      CHAR_TARGET_FAN_STATE,
-@@ -61,11 +79,20 @@
+     PROP_MAX_VALUE,
      PROP_MIN_STEP,
      PROP_MIN_VALUE,
      SERV_FANV2,
++    SERV_SERVICE_LABEL,
 +    SERV_SWITCH,
  )
 -from .util import temperature_to_homekit, temperature_to_states
@@ -69,6 +72,9 @@ diff -ru --exclude __pycache__ homekit/climate_base.py /Users/tardis/code/jfis22
  
  _LOGGER = logging.getLogger(__name__)
  
++# [linked-switches patch] ServiceLabelNamespace value for 1, 2, 3 numbering.
++SERVICE_LABEL_ARABIC_NUMERALS = 1
++
 +# [linked-switches patch] Entities listed in this state attribute become switch
 +# services in the climate accessory, so they share its tile.
 +ATTR_HOMEKIT_LINKED_SWITCHES = "homekit_linked_switches"
@@ -76,7 +82,7 @@ diff -ru --exclude __pycache__ homekit/climate_base.py /Users/tardis/code/jfis22
  FAN_STATE_INACTIVE = 0
  FAN_STATE_IDLE = 1
  FAN_STATE_ACTIVE = 2
-@@ -141,9 +168,20 @@
+@@ -141,9 +174,20 @@
                  ClimateEntityCapabilityAttribute.FAN_MODES,
                  ClimateEntityCapabilityAttribute.SWING_MODES,
                  ClimateEntityCapabilityAttribute.HVAC_MODES,
@@ -97,11 +103,10 @@ diff -ru --exclude __pycache__ homekit/climate_base.py /Users/tardis/code/jfis22
      def get_temperature_range(self, state: State) -> tuple[float, float]:
          """Return the min and max temperature range."""
          return get_temperature_range_from_state(
-@@ -287,6 +325,98 @@
-             swing_mode := attributes.get(ClimateEntityStateAttribute.SWING_MODE)
+@@ -288,9 +332,118 @@
          ):
              self.char_swing.set_value(1 if is_swing_on(swing_mode) else 0)
-+
+ 
 +    def _configure_linked_switches(self, primary_serv: Service) -> None:
 +        """[linked-switches patch] Add a switch per listed entity.
 +
@@ -112,11 +117,23 @@ diff -ru --exclude __pycache__ homekit/climate_base.py /Users/tardis/code/jfis22
 +        is set explicitly on every service and the tile still opens on the
 +        climate service.
 +        """
-+        for entity_id in self.linked_switches:
++        if not self.linked_switches:
++            return
++        # Number the services in the listed order so the Home app shows them
++        # that way rather than alphabetically. The fan, when there is one,
++        # is 1 (set in _configure_fan_service) and the switches follow.
++        self.add_preload_service(SERV_SERVICE_LABEL, unique_id="linked_switches").configure_char(
++            CHAR_SERVICE_LABEL_NAMESPACE, value=SERVICE_LABEL_ARABIC_NUMERALS
++        )
++        first_index = 2 if self.fan_chars else 1
++        for index, entity_id in enumerate(self.linked_switches, start=first_index):
 +            name = self._linked_switch_name(entity_id)
 +            serv = self.add_preload_service(
-+                SERV_SWITCH, [CHAR_NAME, CHAR_CONFIGURED_NAME], unique_id=entity_id
++                SERV_SWITCH,
++                [CHAR_NAME, CHAR_CONFIGURED_NAME, CHAR_SERVICE_LABEL_INDEX],
++                unique_id=entity_id,
 +            )
++            serv.configure_char(CHAR_SERVICE_LABEL_INDEX, value=index)
 +            # Name matches ConfiguredName on purpose. Upstream's fan presets
 +            # prefix Name with the accessory name and show unlabelled in the
 +            # Home app; accessories that show captions send the same text in
@@ -193,21 +210,31 @@ diff -ru --exclude __pycache__ homekit/climate_base.py /Users/tardis/code/jfis22
 +                job_type=HassJobType.Callback,
 +            )
 +        )
- 
++
      def _configure_fan_service(self, primary_serv: Service) -> None:
          """Create a linked fan service for the chars in ``fan_chars``."""
+-        serv_fan = self.add_preload_service(SERV_FANV2, self.fan_chars)
++        # [linked-switches patch] The fan heads the numbered order when there
++        # are switches to place after it.
++        chars = self.fan_chars + ([CHAR_SERVICE_LABEL_INDEX] if self.linked_switches else [])
++        serv_fan = self.add_preload_service(SERV_FANV2, chars)
++        if self.linked_switches:
++            serv_fan.configure_char(CHAR_SERVICE_LABEL_INDEX, value=1)
+         primary_serv.add_linked_service(serv_fan)
+         self.char_fan_active = serv_fan.configure_char(
+             CHAR_ACTIVE, value=1, setter_callback=self._set_fan_active
 diff -ru --exclude __pycache__ homekit/manifest.json /Users/tardis/code/jfis223/homekit_linked_switches/custom_components/homekit/manifest.json
---- homekit/manifest.json	2026-10-24 11:36:54
-+++ homekit/manifest.json	2026-10-24 11:36:51
+--- homekit/manifest.json	2026-10-24 11:58:41
++++ homekit/manifest.json	2026-10-24 11:58:38
 @@ -15,5 +15,6 @@
      "PyQRCode==1.2.1",
      "base36==0.1.1"
    ],
-+  "version": "2026.10.2.3",
++  "version": "2026.10.2.4",
    "zeroconf": ["_homekit._tcp.local."]
  }
 diff -ru --exclude __pycache__ homekit/type_heater_coolers.py /Users/tardis/code/jfis223/homekit_linked_switches/custom_components/homekit/type_heater_coolers.py
---- homekit/type_heater_coolers.py	2026-10-24 11:36:54
+--- homekit/type_heater_coolers.py	2026-10-24 11:58:41
 +++ homekit/type_heater_coolers.py	2026-10-24 10:19:05
 @@ -315,6 +315,8 @@
  
@@ -219,7 +246,7 @@ diff -ru --exclude __pycache__ homekit/type_heater_coolers.py /Users/tardis/code
  
          # Fall back to the displayed target mode so turning Active on for a device
 diff -ru --exclude __pycache__ homekit/type_thermostats.py /Users/tardis/code/jfis223/homekit_linked_switches/custom_components/homekit/type_thermostats.py
---- homekit/type_thermostats.py	2026-10-24 11:36:54
+--- homekit/type_thermostats.py	2026-10-24 11:58:41
 +++ homekit/type_thermostats.py	2026-10-24 10:19:05
 @@ -278,6 +278,8 @@
  

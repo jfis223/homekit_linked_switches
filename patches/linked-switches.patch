@@ -1,6 +1,6 @@
 diff -ru --exclude __pycache__ homekit/climate_base.py /Users/tardis/code/jfis223/homekit_linked_switches/custom_components/homekit/climate_base.py
---- homekit/climate_base.py	2026-10-24 11:24:59
-+++ homekit/climate_base.py	2026-10-24 11:24:43
+--- homekit/climate_base.py	2026-10-24 11:36:54
++++ homekit/climate_base.py	2026-10-24 11:36:42
 @@ -1,12 +1,14 @@
  """Base class shared by the climate accessory types."""
  
@@ -97,7 +97,7 @@ diff -ru --exclude __pycache__ homekit/climate_base.py /Users/tardis/code/jfis22
      def get_temperature_range(self, state: State) -> tuple[float, float]:
          """Return the min and max temperature range."""
          return get_temperature_range_from_state(
-@@ -287,6 +325,95 @@
+@@ -287,6 +325,98 @@
              swing_mode := attributes.get(ClimateEntityStateAttribute.SWING_MODE)
          ):
              self.char_swing.set_value(1 if is_swing_on(swing_mode) else 0)
@@ -117,10 +117,13 @@ diff -ru --exclude __pycache__ homekit/climate_base.py /Users/tardis/code/jfis22
 +            serv = self.add_preload_service(
 +                SERV_SWITCH, [CHAR_NAME, CHAR_CONFIGURED_NAME], unique_id=entity_id
 +            )
-+            serv.configure_char(
-+                CHAR_NAME, value=cleanup_name_for_homekit(f"{self.display_name} {name}")
-+            )
-+            serv.configure_char(CHAR_CONFIGURED_NAME, value=cleanup_name_for_homekit(name))
++            # Name matches ConfiguredName on purpose. Upstream's fan presets
++            # prefix Name with the accessory name and show unlabelled in the
++            # Home app; accessories that show captions send the same text in
++            # both.
++            name = cleanup_name_for_homekit(name)
++            serv.configure_char(CHAR_NAME, value=name)
++            serv.configure_char(CHAR_CONFIGURED_NAME, value=name)
 +            self._linked_switch_chars[entity_id] = serv.configure_char(
 +                CHAR_ON,
 +                value=False,
@@ -194,17 +197,17 @@ diff -ru --exclude __pycache__ homekit/climate_base.py /Users/tardis/code/jfis22
      def _configure_fan_service(self, primary_serv: Service) -> None:
          """Create a linked fan service for the chars in ``fan_chars``."""
 diff -ru --exclude __pycache__ homekit/manifest.json /Users/tardis/code/jfis223/homekit_linked_switches/custom_components/homekit/manifest.json
---- homekit/manifest.json	2026-10-24 11:24:59
-+++ homekit/manifest.json	2026-10-24 11:24:56
+--- homekit/manifest.json	2026-10-24 11:36:54
++++ homekit/manifest.json	2026-10-24 11:36:51
 @@ -15,5 +15,6 @@
      "PyQRCode==1.2.1",
      "base36==0.1.1"
    ],
-+  "version": "2026.10.2.2",
++  "version": "2026.10.2.3",
    "zeroconf": ["_homekit._tcp.local."]
  }
 diff -ru --exclude __pycache__ homekit/type_heater_coolers.py /Users/tardis/code/jfis223/homekit_linked_switches/custom_components/homekit/type_heater_coolers.py
---- homekit/type_heater_coolers.py	2026-10-24 11:24:59
+--- homekit/type_heater_coolers.py	2026-10-24 11:36:54
 +++ homekit/type_heater_coolers.py	2026-10-24 10:19:05
 @@ -315,6 +315,8 @@
  
@@ -216,7 +219,7 @@ diff -ru --exclude __pycache__ homekit/type_heater_coolers.py /Users/tardis/code
  
          # Fall back to the displayed target mode so turning Active on for a device
 diff -ru --exclude __pycache__ homekit/type_thermostats.py /Users/tardis/code/jfis223/homekit_linked_switches/custom_components/homekit/type_thermostats.py
---- homekit/type_thermostats.py	2026-10-24 11:24:59
+--- homekit/type_thermostats.py	2026-10-24 11:36:54
 +++ homekit/type_thermostats.py	2026-10-24 10:19:05
 @@ -278,6 +278,8 @@
  

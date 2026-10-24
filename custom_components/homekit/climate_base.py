@@ -341,10 +341,13 @@ class HomeKitClimateAccessory(HomeAccessory):
             serv = self.add_preload_service(
                 SERV_SWITCH, [CHAR_NAME, CHAR_CONFIGURED_NAME], unique_id=entity_id
             )
-            serv.configure_char(
-                CHAR_NAME, value=cleanup_name_for_homekit(f"{self.display_name} {name}")
-            )
-            serv.configure_char(CHAR_CONFIGURED_NAME, value=cleanup_name_for_homekit(name))
+            # Name matches ConfiguredName on purpose. Upstream's fan presets
+            # prefix Name with the accessory name and show unlabelled in the
+            # Home app; accessories that show captions send the same text in
+            # both.
+            name = cleanup_name_for_homekit(name)
+            serv.configure_char(CHAR_NAME, value=name)
+            serv.configure_char(CHAR_CONFIGURED_NAME, value=name)
             self._linked_switch_chars[entity_id] = serv.configure_char(
                 CHAR_ON,
                 value=False,

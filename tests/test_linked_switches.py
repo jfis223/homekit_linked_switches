@@ -35,6 +35,7 @@ from pytest_homeassistant_custom_component.common import async_mock_service
 from custom_components.homekit.climate_base import ATTR_HOMEKIT_LINKED_SWITCHES
 from custom_components.homekit.const import (
     CHAR_CONFIGURED_NAME,
+    CHAR_NAME,
     CHAR_ON,
     SERV_HEATER_COOLER,
     SERV_SWITCH,
@@ -143,6 +144,11 @@ async def test_one_switch_per_entity_in_the_same_accessory(
     # Registry names drop the device prefix; a helper has only its friendly name.
     assert set(switches) == {"Night mode", "Bedroom AC 30 Minutes Timer"}
     primary_serv = acc.get_service(primary)
+    # The Home app captions switches whose Name matches ConfiguredName; an
+    # accessory-name prefix on Name is what upstream's unlabelled presets do.
+    assert all(
+        serv.get_characteristic(CHAR_NAME).value == label for label, serv in switches.items()
+    )
     # Not linked: the Home app draws linked services as uncaptioned controls.
     assert not any(serv in primary_serv.linked_services for serv in switches.values())
     # The tile must still open on the climate service, not a switch.

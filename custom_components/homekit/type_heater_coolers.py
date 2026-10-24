@@ -315,6 +315,8 @@ class HeaterCooler(HomeKitClimateAccessory):
 
         # Every service exists now, so they all get an explicit primary
         # flag; without one the Home app can pick its own tile service.
+        # [linked-switches patch]
+        self._configure_linked_switches(serv)
         self.set_primary_service(serv)
 
         # Fall back to the displayed target mode so turning Active on for a device

@@ -278,6 +278,8 @@ class Thermostat(HomeKitClimateAccessory):
 
         # Every service exists now, so they all get an explicit primary
         # flag; without one the Home app can pick its own tile service.
+        # [linked-switches patch]
+        self._configure_linked_switches(serv_thermostat)
         self.set_primary_service(serv_thermostat)
 
         self.async_update_state(state)

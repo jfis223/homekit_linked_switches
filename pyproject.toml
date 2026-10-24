@@ -1,0 +1,10 @@
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+asyncio_mode = "auto"
+
+[tool.ruff]
+line-length = 100
+# custom_components/homekit is upstream code plus a small patch; linting it
+# would mean reformatting upstream and bloating every re-sync diff.
+extend-exclude = ["custom_components"]

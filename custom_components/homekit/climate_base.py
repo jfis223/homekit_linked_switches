@@ -1,12 +1,14 @@
 """Base class shared by the climate accessory types."""
 
 from collections.abc import Mapping
+from functools import partial
 import logging
 from typing import Any
 
 from pyhap.characteristic import Characteristic
 from pyhap.const import CATEGORY_THERMOSTAT
 from pyhap.service import Service
+from pyhap.util import callback as pyhap_callback
 
 from homeassistant.components.climate import (
     ATTR_FAN_MODE,
@@ -30,11 +32,24 @@ from homeassistant.components.climate import (
 )
 from homeassistant.const import (
     ATTR_ENTITY_ID,
+    SERVICE_TURN_OFF,
+    SERVICE_TURN_ON,
+    STATE_ON,
     STATE_UNAVAILABLE,
     STATE_UNKNOWN,
     EntityStateAttribute,
 )
-from homeassistant.core import State, callback
+from homeassistant.core import (
+    DOMAIN as HOMEASSISTANT_DOMAIN,
+    Event,
+    EventStateChangedData,
+    HassJobType,
+    State,
+    callback,
+    split_entity_id,
+)
+from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.util.percentage import percentage_to_ordered_list_item
 
 from .accessories import HomeAccessory
@@ -52,8 +67,11 @@ from .climate_util import (
 )
 from .const import (
     CHAR_ACTIVE,
+    CHAR_CONFIGURED_NAME,
     CHAR_CURRENT_FAN_STATE,
     CHAR_CURRENT_TEMPERATURE,
+    CHAR_NAME,
+    CHAR_ON,
     CHAR_ROTATION_SPEED,
     CHAR_SWING_MODE,
     CHAR_TARGET_FAN_STATE,
@@ -61,10 +79,19 @@ from .const import (
     PROP_MIN_STEP,
     PROP_MIN_VALUE,
     SERV_FANV2,
+    SERV_SWITCH,
 )
-from .util import temperature_to_homekit, temperature_to_states
+from .util import (
+    cleanup_name_for_homekit,
+    temperature_to_homekit,
+    temperature_to_states,
+)
 
 _LOGGER = logging.getLogger(__name__)
+
+# [linked-switches patch] Entities listed in this state attribute become switch
+# services linked into the climate accessory, so they share its tile.
+ATTR_HOMEKIT_LINKED_SWITCHES = "homekit_linked_switches"
 
 FAN_STATE_INACTIVE = 0
 FAN_STATE_IDLE = 1
@@ -141,8 +168,19 @@ class HomeKitClimateAccessory(HomeAccessory):
                 ClimateEntityCapabilityAttribute.FAN_MODES,
                 ClimateEntityCapabilityAttribute.SWING_MODES,
                 ClimateEntityCapabilityAttribute.HVAC_MODES,
+                ATTR_HOMEKIT_LINKED_SWITCHES,
             )
         )
+
+        # [linked-switches patch] Read once here like the other service-shaping
+        # attributes; a changed list reloads the accessory via the line above.
+        linked = attributes.get(ATTR_HOMEKIT_LINKED_SWITCHES)
+        self.linked_switches: list[str] = (
+            list(dict.fromkeys(e for e in linked if isinstance(e, str)))
+            if isinstance(linked, (list, tuple))
+            else []
+        )
+        self._linked_switch_chars: dict[str, Characteristic] = {}
 
     def get_temperature_range(self, state: State) -> tuple[float, float]:
         """Return the min and max temperature range."""
@@ -287,6 +325,92 @@ class HomeKitClimateAccessory(HomeAccessory):
             swing_mode := attributes.get(ClimateEntityStateAttribute.SWING_MODE)
         ):
             self.char_swing.set_value(1 if is_swing_on(swing_mode) else 0)
+
+    def _configure_linked_switches(self, primary_serv: Service) -> None:
+        """[linked-switches patch] Add a linked switch per listed entity.
+
+        Subclasses call this before set_primary_service, so the primary flag
+        is set explicitly on every service.
+        """
+        for entity_id in self.linked_switches:
+            name = self._linked_switch_name(entity_id)
+            serv = self.add_preload_service(
+                SERV_SWITCH, [CHAR_NAME, CHAR_CONFIGURED_NAME], unique_id=entity_id
+            )
+            primary_serv.add_linked_service(serv)
+            serv.configure_char(
+                CHAR_NAME, value=cleanup_name_for_homekit(f"{self.display_name} {name}")
+            )
+            serv.configure_char(CHAR_CONFIGURED_NAME, value=cleanup_name_for_homekit(name))
+            self._linked_switch_chars[entity_id] = serv.configure_char(
+                CHAR_ON,
+                value=False,
+                setter_callback=partial(self._set_linked_switch, entity_id),
+            )
+
+    def _linked_switch_name(self, entity_id: str) -> str:
+        """Name a linked switch without its device's name in front.
+
+        Entities using has_entity_name keep that part apart in the registry
+        ("Night mode" rather than "Bedroom Night mode"); helpers have only
+        their friendly name.
+        """
+        entry = er.async_get(self.hass).async_get(entity_id)
+        if entry and entry.has_entity_name and (entry.name or entry.original_name):
+            return entry.name or entry.original_name
+        if (state := self.hass.states.get(entity_id)) is not None:
+            return state.name
+        # Not loaded yet; the name is fixed until the accessory next reloads.
+        return split_entity_id(entity_id)[1].replace("_", " ")
+
+    def _set_linked_switch(self, entity_id: str, value: int) -> None:
+        """Turn a linked entity on or off from HomeKit."""
+        _LOGGER.debug("%s: Set linked switch %s to %s", self.entity_id, entity_id, value)
+        self.hass.async_create_task(
+            self._async_set_linked_switch(entity_id, bool(value)), eager_start=True
+        )
+
+    async def _async_set_linked_switch(self, entity_id: str, on: bool) -> None:
+        if not await self.async_call_service_and_wait(
+            HOMEASSISTANT_DOMAIN,
+            SERVICE_TURN_ON if on else SERVICE_TURN_OFF,
+            {ATTR_ENTITY_ID: entity_id},
+            on,
+        ):
+            # The base resync only covers the climate entity itself, so put
+            # this switch back to what the entity actually is.
+            self._async_update_linked_switch(entity_id, self.hass.states.get(entity_id))
+
+    @callback
+    def _async_update_linked_switch(self, entity_id: str, state: State | None) -> None:
+        """Mirror a linked entity onto its switch, keeping the last value if unreadable."""
+        if state is None or state.state in (STATE_UNAVAILABLE, STATE_UNKNOWN):
+            return
+        self._linked_switch_chars[entity_id].set_value(state.state == STATE_ON)
+
+    @callback
+    def _async_linked_switch_event(self, event: Event[EventStateChangedData]) -> None:
+        self._async_update_linked_switch(
+            event.data["entity_id"], event.data["new_state"]
+        )
+
+    @callback
+    @pyhap_callback  # type: ignore[untyped-decorator]
+    def run(self) -> None:
+        """Start tracking the linked switches alongside the entity."""
+        super().run()
+        if not self._linked_switch_chars:
+            return
+        for entity_id in self._linked_switch_chars:
+            self._async_update_linked_switch(entity_id, self.hass.states.get(entity_id))
+        self._subscriptions.append(
+            async_track_state_change_event(
+                self.hass,
+                list(self._linked_switch_chars),
+                self._async_linked_switch_event,
+                job_type=HassJobType.Callback,
+            )
+        )
 
     def _configure_fan_service(self, primary_serv: Service) -> None:
         """Create a linked fan service for the chars in ``fan_chars``."""

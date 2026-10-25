@@ -225,9 +225,13 @@ async def test_a_missing_entity_does_not_break_the_accessory(
     switches = switch_services(acc)
     assert switches["not there yet"].get_characteristic(CHAR_ON).value is False
 
-    hass.states.async_set("switch.not_there_yet", STATE_ON)
-    await hass.async_block_till_done()
-    assert switches["not there yet"].get_characteristic(CHAR_ON).value is True
+    # Once it loads, the rebuild picks up its real name.
+    with patch.object(acc, "async_reload") as reload:
+        hass.states.async_set(
+            "switch.not_there_yet", STATE_ON, {ATTR_FRIENDLY_NAME: "Not There Yet"}
+        )
+        await hass.async_block_till_done()
+    reload.assert_called_once()
 
 
 @pytest.mark.parametrize(("accessory_class", "primary"), ACCESSORIES)
@@ -240,6 +244,65 @@ async def test_a_changed_list_reloads_the_accessory(
 
     with patch.object(acc, "async_reload") as reload:
         set_climate(hass, [night, timer])
+        await hass.async_block_till_done()
+
+    reload.assert_called_once()
+
+
+@pytest.mark.parametrize(("accessory_class", "primary"), ACCESSORIES)
+async def test_a_list_changed_across_a_reload_rebuilds_the_accessory(
+    hass, hk_driver, night, timer, accessory_class, primary
+):
+    """Saving the list reloads the entity's entry: removed, then added back.
+
+    The base check needs an available old and new state and never fires
+    across that, so the list is compared with the one the services came from.
+    """
+    set_climate(hass, [night])
+    acc = await start(hass, hk_driver, accessory_class)
+
+    with patch.object(acc, "async_reload") as reload:
+        hass.states.async_remove(CLIMATE)
+        await hass.async_block_till_done()
+        hass.states.async_set(CLIMATE, STATE_UNAVAILABLE)
+        await hass.async_block_till_done()
+        reload.assert_not_called()
+        set_climate(hass, [night, timer])
+        await hass.async_block_till_done()
+
+    reload.assert_called_once()
+
+
+@pytest.mark.parametrize(("accessory_class", "primary"), ACCESSORIES)
+async def test_an_unchanged_list_does_not_rebuild(
+    hass, hk_driver, night, accessory_class, primary
+):
+    set_climate(hass, [night])
+    acc = await start(hass, hk_driver, accessory_class)
+
+    with patch.object(acc, "async_reload") as reload:
+        hass.states.async_remove(CLIMATE)
+        await hass.async_block_till_done()
+        set_climate(hass, [night], temperature=23)
+        await hass.async_block_till_done()
+
+    reload.assert_not_called()
+
+
+@pytest.mark.parametrize(("accessory_class", "primary"), ACCESSORIES)
+async def test_a_renamed_switch_rebuilds_the_accessory(
+    hass, hk_driver, night, timer, accessory_class, primary
+):
+    """The names are fixed at build time; a state change alone is not a rename."""
+    set_climate(hass, [night, timer])
+    acc = await start(hass, hk_driver, accessory_class)
+
+    with patch.object(acc, "async_reload") as reload:
+        hass.states.async_set(timer, STATE_OFF, {ATTR_FRIENDLY_NAME: "Bedroom AC 30 Minutes Timer"})
+        await hass.async_block_till_done()
+        reload.assert_not_called()
+
+        hass.states.async_set(timer, STATE_OFF, {ATTR_FRIENDLY_NAME: "30 Minute Timer"})
         await hass.async_block_till_done()
 
     reload.assert_called_once()

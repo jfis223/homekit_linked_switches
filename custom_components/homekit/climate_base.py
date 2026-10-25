@@ -95,6 +95,14 @@ _LOGGER = logging.getLogger(__name__)
 # the earlier a service comes, the more zero-width spaces lead its name.
 SORT_PREFIX_CHAR = "\u200b"
 
+
+def _parse_linked_switches(attributes: Mapping[str, Any]) -> list[str]:
+    """[linked-switches patch] The listed entity ids, deduplicated, junk dropped."""
+    linked = attributes.get(ATTR_HOMEKIT_LINKED_SWITCHES)
+    if not isinstance(linked, (list, tuple)):
+        return []
+    return list(dict.fromkeys(e for e in linked if isinstance(e, str)))
+
 # [linked-switches patch] Entities listed in this state attribute become switch
 # services in the climate accessory, so they share its tile.
 ATTR_HOMEKIT_LINKED_SWITCHES = "homekit_linked_switches"
@@ -174,19 +182,39 @@ class HomeKitClimateAccessory(HomeAccessory):
                 ClimateEntityCapabilityAttribute.FAN_MODES,
                 ClimateEntityCapabilityAttribute.SWING_MODES,
                 ClimateEntityCapabilityAttribute.HVAC_MODES,
-                ATTR_HOMEKIT_LINKED_SWITCHES,
             )
         )
 
         # [linked-switches patch] Read once here like the other service-shaping
-        # attributes; a changed list reloads the accessory via the line above.
-        linked = attributes.get(ATTR_HOMEKIT_LINKED_SWITCHES)
-        self.linked_switches: list[str] = (
-            list(dict.fromkeys(e for e in linked if isinstance(e, str)))
-            if isinstance(linked, (list, tuple))
-            else []
-        )
+        # attributes; a changed list reloads the accessory (see
+        # async_update_event_state_callback).
+        self.linked_switches: list[str] = _parse_linked_switches(attributes)
         self._linked_switch_chars: dict[str, Characteristic] = {}
+        # Each switch's name as built, before the sort prefix.
+        self._linked_switch_names: dict[str, str] = {}
+
+    @callback
+    def async_update_event_state_callback(
+        self, event: Event[EventStateChangedData]
+    ) -> None:
+        """[linked-switches patch] Rebuild when the switch list differs from the built one.
+
+        The base check compares old and new state, and skips it whenever
+        either is missing or unavailable. A new list usually arrives through a
+        reload of the entity's own config entry, which removes the entity and
+        adds it back, so that check never sees it. Compare against the list
+        the services were built from instead.
+        """
+        new_state = event.data["new_state"]
+        if (
+            new_state is not None
+            and new_state.state not in (STATE_UNAVAILABLE, STATE_UNKNOWN)
+            and _parse_linked_switches(new_state.attributes) != self.linked_switches
+        ):
+            _LOGGER.debug("%s: Reloading HomeKit accessory for its linked switches", self.entity_id)
+            self.async_reload()
+            return
+        super().async_update_event_state_callback(event)
 
     def get_temperature_range(self, state: State) -> tuple[float, float]:
         """Return the min and max temperature range."""
@@ -353,7 +381,8 @@ class HomeKitClimateAccessory(HomeAccessory):
             # prefix Name with the accessory name and show unlabelled in the
             # Home app; accessories that show captions send the same text in
             # both.
-            name = self._sorted_name(self._linked_switch_name(entity_id), position)
+            self._linked_switch_names[entity_id] = self._linked_switch_name(entity_id)
+            name = self._sorted_name(self._linked_switch_names[entity_id], position)
             serv.configure_char(CHAR_NAME, value=name)
             serv.configure_char(CHAR_CONFIGURED_NAME, value=name)
             self._linked_switch_chars[entity_id] = serv.configure_char(
@@ -414,9 +443,19 @@ class HomeKitClimateAccessory(HomeAccessory):
 
     @callback
     def _async_linked_switch_event(self, event: Event[EventStateChangedData]) -> None:
-        self._async_update_linked_switch(
-            event.data["entity_id"], event.data["new_state"]
-        )
+        entity_id = event.data["entity_id"]
+        new_state = event.data["new_state"]
+        # The names are fixed at build time, so a renamed (or newly loaded)
+        # entity needs a rebuild to show its new name.
+        if (
+            new_state is not None
+            and new_state.state not in (STATE_UNAVAILABLE, STATE_UNKNOWN)
+            and self._linked_switch_name(entity_id) != self._linked_switch_names[entity_id]
+        ):
+            _LOGGER.debug("%s: Reloading HomeKit accessory, %s was renamed", self.entity_id, entity_id)
+            self.async_reload()
+            return
+        self._async_update_linked_switch(entity_id, new_state)
 
     @callback
     @pyhap_callback  # type: ignore[untyped-decorator]

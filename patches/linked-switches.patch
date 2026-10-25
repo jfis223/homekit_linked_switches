@@ -1,6 +1,6 @@
 diff -ru --exclude __pycache__ homekit/climate_base.py /Users/tardis/code/jfis223/homekit_linked_switches/custom_components/homekit/climate_base.py
---- homekit/climate_base.py	2026-10-25 09:20:58
-+++ homekit/climate_base.py	2026-10-25 09:20:45
+--- homekit/climate_base.py	2026-10-25 09:22:52
++++ homekit/climate_base.py	2026-10-25 09:21:44
 @@ -1,12 +1,14 @@
  """Base class shared by the climate accessory types."""
  
@@ -263,18 +263,18 @@ diff -ru --exclude __pycache__ homekit/climate_base.py /Users/tardis/code/jfis22
          self.char_fan_active = serv_fan.configure_char(
              CHAR_ACTIVE, value=1, setter_callback=self._set_fan_active
 diff -ru --exclude __pycache__ homekit/manifest.json /Users/tardis/code/jfis223/homekit_linked_switches/custom_components/homekit/manifest.json
---- homekit/manifest.json	2026-10-25 09:20:58
-+++ homekit/manifest.json	2026-10-25 09:20:53
+--- homekit/manifest.json	2026-10-25 09:22:52
++++ homekit/manifest.json	2026-10-25 09:22:47
 @@ -15,5 +15,6 @@
      "PyQRCode==1.2.1",
      "base36==0.1.1"
    ],
-+  "version": "2026.10.3.2",
++  "version": "2026.10.4.1",
    "zeroconf": ["_homekit._tcp.local."]
  }
 diff -ru --exclude __pycache__ homekit/type_heater_coolers.py /Users/tardis/code/jfis223/homekit_linked_switches/custom_components/homekit/type_heater_coolers.py
---- homekit/type_heater_coolers.py	2026-10-25 09:20:58
-+++ homekit/type_heater_coolers.py	2026-10-24 14:02:00
+--- homekit/type_heater_coolers.py	2026-10-25 09:22:52
++++ homekit/type_heater_coolers.py	2026-10-25 09:21:44
 @@ -315,6 +315,8 @@
  
          # Every service exists now, so they all get an explicit primary
@@ -285,8 +285,8 @@ diff -ru --exclude __pycache__ homekit/type_heater_coolers.py /Users/tardis/code
  
          # Fall back to the displayed target mode so turning Active on for a device
 diff -ru --exclude __pycache__ homekit/type_thermostats.py /Users/tardis/code/jfis223/homekit_linked_switches/custom_components/homekit/type_thermostats.py
---- homekit/type_thermostats.py	2026-10-25 09:20:58
-+++ homekit/type_thermostats.py	2026-10-24 14:02:00
+--- homekit/type_thermostats.py	2026-10-25 09:22:52
++++ homekit/type_thermostats.py	2026-10-25 09:21:44
 @@ -278,6 +278,8 @@
  
          # Every service exists now, so they all get an explicit primary

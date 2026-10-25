@@ -41,11 +41,11 @@ make install && make check && make patch
 
 The whole change lives in `patches/linked-switches.patch`: about 130 lines, mostly in `climate_base.py`, plus one call in each of `type_thermostats.py` and `type_heater_coolers.py`, and the manifest version. Patched spots are marked `[linked-switches patch]`. If a hunk stops applying after an upstream change, port it by hand and regenerate the patch with `make patch`.
 
-The current copy is home-assistant/core **2026.10.3**.
+The current copy is home-assistant/core **2026.10.4**.
 
 ## Development
 
-`make install` (needs [uv](https://docs.astral.sh/uv/); fetches Python 3.14) then `make check`. The tests build real HeaterCooler and Thermostat accessories against a driver with pyhap's networking patched out. Core's own `test_type_thermostats.py` and `test_type_heater_coolers.py` (132 tests) were also run against the patched copy at 2026.10.2 and pass; 2026.10.3 left the integration unchanged.
+`make install` (needs [uv](https://docs.astral.sh/uv/); fetches Python 3.14) then `make check`. The tests build real HeaterCooler and Thermostat accessories against a driver with pyhap's networking patched out. Core's own `test_type_thermostats.py` and `test_type_heater_coolers.py` (132 tests) were also run against the patched copy at 2026.10.2 and pass; 2026.10.3 and 2026.10.4 left the integration unchanged.
 
 ## License
 
